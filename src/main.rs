@@ -207,7 +207,7 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
 async fn main() {
     env_logger::init();
 
-  let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+  let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
   println!("Listening on http://{}", addr);
 
   // Create a server bound on the provided address
