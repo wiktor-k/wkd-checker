@@ -1,5 +1,3 @@
-#![feature(backtrace)]
-
 use {
     hyper::{
         // Following functions are used by Hyper to handle a `Request`
