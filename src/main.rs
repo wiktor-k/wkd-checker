@@ -17,6 +17,10 @@ use {
     std::net::SocketAddr,
 };
 
+extern crate sequoia_openpgp as openpgp;
+use openpgp::parse::Parse;
+use zbase32;
+
 use serde::{Deserialize, Serialize};
 use hyper_tls::HttpsConnector;
 use bytes::buf::BufExt as _;
@@ -50,27 +54,153 @@ async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct Req<'a> {
+    email: &'a str,
+}
+
+#[derive(Debug)]
+struct Parts {
+    advanced_key_url: String,
+    advanced_policy_url: String,
+    direct_key_url: String,
+    direct_policy_url: String,
+}
+
+impl Req<'_> {
+    fn parts(&self) -> Vec<&str> {
+        self.email.split('@').collect::<Vec<&str>>()
+    }
+
+    fn encoded_part(bytes: &[u8]) -> String {
+        let mut m = sha1::Sha1::new();
+        m.update(bytes);
+        let digest = m.digest();
+        let bytes = digest.bytes();
+        zbase32::encode_full_bytes(&bytes)
+    }
+
+    fn parse(&self) -> Parts {
+        let parts = self.parts();
+        let local = parts[0];
+        let encoded_local = Self::encoded_part(local.as_bytes());
+        let domain = parts[1];
+        Parts {
+          advanced_key_url: format!("https://openpgpkey.{}/.well-known/openpgpkey/{}/hu/{}?l={}", domain, domain, encoded_local, local),
+          advanced_policy_url: format!("https://openpgpkey.{}/.well-known/openpgpkey/{}/policy", domain, domain),
+          direct_key_url: format!("https://{}/.well-known/openpgpkey/hu/{}?l={}", domain, encoded_local, local),
+          direct_policy_url: format!("https://{}/.well-known/openpgpkey/policy", domain)
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_parsing() {
+        let req = crate::Req { email: "eschwartz@archlinux.org" };
+        let parts = req.parse();
+        assert_eq!(parts.advanced_key_url, "https://openpgpkey.archlinux.org/.well-known/openpgpkey/archlinux.org/hu/ycx3iaqih9tzkfk7dp8jo9xrdepu5m8u?l=eschwartz");
+        assert_eq!(parts.advanced_policy_url, "https://openpgpkey.archlinux.org/.well-known/openpgpkey/archlinux.org/policy");
+        assert_eq!(parts.direct_key_url, "https://archlinux.org/.well-known/openpgpkey/hu/ycx3iaqih9tzkfk7dp8jo9xrdepu5m8u?l=eschwartz");
+        assert_eq!(parts.direct_policy_url, "https://archlinux.org/.well-known/openpgpkey/policy");
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct KeyInfo {
+    url: String,
+    fpr: Option<String>,
+    status: u16,
+}
+
+impl KeyInfo {
+    async fn find_key(url: String, res: Response<Body>) -> Result<KeyInfo, Box<dyn Error>> {
+        let status = res.status();
+        if status != 200 {
+            return Ok(KeyInfo {
+                url,
+                fpr: None,
+                status: status.as_u16()
+            })
+        }
+        let bytes = hyper::body::to_bytes(res.into_body()).await?;
+
+        let cert = openpgp::Cert::from_bytes(&bytes.to_vec())?;
+        println!("fp: {}", cert.fingerprint());
+
+        Ok(KeyInfo {
+            url,
+            fpr: Some(cert.fingerprint().to_string()),
+            status: status.as_u16()
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct PolicyInfo {
+    url: String,
+    status: u16,
+}
+
+#[derive(Debug, Serialize)]
+struct Info {
+    key: KeyInfo,
+    policy: PolicyInfo,
+}
+
+#[derive(Debug, Serialize)]
+struct WkdDiagnostic {
+    direct: Info,
+    advanced: Info,
+}
+
 async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error>> {
-    // Always return successfully with a response containing a body with
-    // a friendly greeting ;)
 
-    println!("Got request at {:?}", req.uri());
+    /*
+    let bytes = hyper::body::to_bytes(req.into_body()).await?;
+    let req: Req = serde_json::from_slice(&bytes)?;
+    */
+    let uri = req.uri().to_string();
+    let req = Req { email: uri.split('/').last().unwrap() };
+    let parts = req.parse();
 
+    println!("for e-mail: {}, {:?}", req.email, parts);
 
-    let url: Uri = "https://metacode.biz/sandbox/users.json".parse().unwrap();
+    let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
 
-    let users: Vec<User> = fetch_json(url).await?;
-    //let x = "test";
+    let url = parts.direct_key_url.parse().unwrap();
+    let res = client.get(url).await?;
+    let direct = KeyInfo::find_key(parts.direct_key_url, res).await?;
 
-    println!("users: {:#?}", users);
+    let url = parts.direct_policy_url.parse().unwrap();
+    let res = client.get(url).await?;
+    let direct_policy = PolicyInfo { url: parts.direct_policy_url, status: res.status().as_u16() };
 
-    let sum = users.iter().fold(0, |acc, user| acc + user.id);
-    println!("sum of ids: {}", sum);
+    let url = parts.advanced_key_url.parse().unwrap();
+    let res = client.get(url).await?;
+    let advanced = KeyInfo::find_key(parts.advanced_key_url, res).await?;
 
+    let url = parts.advanced_policy_url.parse().unwrap();
+    let res = client.get(url).await?;
+    let advanced_policy = PolicyInfo { url: parts.advanced_policy_url, status: res.status().as_u16() };
 
-    // Return the result of the request directly to the user
-    println!("request finished-- returning response");
-    Ok(Response::new(Body::from(format!("sum of ids: {}", sum))))
+    let result = WkdDiagnostic {
+        direct: Info {
+            key: direct,
+            policy: direct_policy,
+        },
+        advanced: Info {
+            key: advanced,
+            policy: advanced_policy
+        }
+    };
+
+    /*for uid in cert.userids() {
+        s = format!("{}{}", s, *uid);
+    }*/
+
+    Ok(Response::new(Body::from(serde_json::to_string_pretty(&result)?)))
 }
 
 #[tokio::main]
@@ -93,14 +223,4 @@ async fn main() {
   if let Err(e) = serve_future.await {
       eprintln!("server error: {}", e);
   }
-}
-
-async fn fetch_json(url: hyper::Uri) -> Result<Vec<User>, Box<dyn std::error::Error>> {
-    let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
-
-    let res = client.get(url).await?;
-
-    let body = hyper::body::aggregate(res).await?;
-
-    Ok(serde_json::from_reader(body.reader())?)
 }
