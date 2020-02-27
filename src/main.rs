@@ -150,10 +150,35 @@ struct WkdDiagnostic<'a> {
     advanced: Info<'a>,
 }
 
-async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error>> {
+use http;
 
-    let url_to_req = |url: &str| Request::get(url).header("User-Agent", "WKDchecker (+https://metacode.biz/@wiktor)").
-    body(hyper::body::Body::default()).unwrap();
+fn url_to_req(url: &str) -> http::request::Request<hyper::body::Body> {
+  Request::get(url).header("User-Agent", "WKDchecker (+https://metacode.biz/@wiktor)")
+  .body(hyper::body::Body::default()).unwrap()
+}
+
+use futures::future::{BoxFuture, FutureExt};
+
+fn make_req<'a, T>(client: &'a hyper::client::Client::<T>, url: &'a str) ->
+BoxFuture<'a, hyper::Result<Response<Body>>>
+where T: hyper::client::connect::Connect + Clone + Send + Sync + 'static {
+    async move {
+        let response = client.request(url_to_req(url)).await;
+
+        if let Ok(ref resp) = response {
+            println!("status: {}", resp.status().as_u16());
+            if resp.status().as_u16() == 301 {
+                let redirect = resp.headers().get("Location").unwrap().to_str().unwrap();
+                println!("redirect from {} to {}", url, &redirect);
+                return make_req(&client, &redirect).await
+            }
+        }
+
+        response
+    }.boxed()
+}
+
+async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error>> {
 
     let uri = req.uri().to_string();
     let req = Req { email: uri.split('/').last().unwrap() };
@@ -164,7 +189,7 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
     let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
 
     let mut urls = join_all(vec![&parts.direct_key_url, &parts.direct_policy_url,
-    &parts.advanced_key_url, &parts.advanced_policy_url].iter().map(|url| client.request(url_to_req(url)))).await;
+    &parts.advanced_key_url, &parts.advanced_policy_url].iter().map(|url| make_req(&client, url))).await;
     let api = urls.remove(3);
     let a = urls.remove(2);
     let dpi = urls.remove(1);
