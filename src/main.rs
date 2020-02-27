@@ -9,7 +9,6 @@ use {
         Request,
         Response,
         Server,
-        Uri,
         StatusCode,
     },
     std::net::SocketAddr,
@@ -21,10 +20,9 @@ use zbase32;
 
 use serde::{Deserialize, Serialize};
 use hyper_tls::HttpsConnector;
-use bytes::buf::BufExt as _;
 use std::error::Error;
-use log::{info, trace, warn};
-
+use log::{warn};
+use futures::future::join_all;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct MyObj {
@@ -106,14 +104,14 @@ mod test {
 }
 
 #[derive(Debug, Serialize)]
-struct KeyInfo {
-    url: String,
+struct KeyInfo<'a> {
+    url: &'a str,
     fpr: Option<String>,
     status: u16,
 }
 
-impl KeyInfo {
-    async fn find_key(url: String, res: Response<Body>) -> Result<KeyInfo, Box<dyn Error>> {
+impl<'a> KeyInfo<'a> {
+    async fn find_key(url: &'a str, res: Response<Body>) -> Result<KeyInfo<'a>, Box<dyn Error>> {
         let status = res.status();
         if status != 200 {
             return Ok(KeyInfo {
@@ -125,7 +123,6 @@ impl KeyInfo {
         let bytes = hyper::body::to_bytes(res.into_body()).await?;
 
         let cert = openpgp::Cert::from_bytes(&bytes.to_vec())?;
-        println!("fp: {}", cert.fingerprint());
 
         Ok(KeyInfo {
             url,
@@ -136,29 +133,28 @@ impl KeyInfo {
 }
 
 #[derive(Debug, Serialize)]
-struct PolicyInfo {
-    url: String,
+struct PolicyInfo<'a> {
+    url: &'a str,
     status: u16,
 }
 
 #[derive(Debug, Serialize)]
-struct Info {
-    key: KeyInfo,
-    policy: PolicyInfo,
+struct Info<'a> {
+    key: KeyInfo<'a>,
+    policy: PolicyInfo<'a>,
 }
 
 #[derive(Debug, Serialize)]
-struct WkdDiagnostic {
-    direct: Info,
-    advanced: Info,
+struct WkdDiagnostic<'a> {
+    direct: Info<'a>,
+    advanced: Info<'a>,
 }
 
 async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error>> {
 
-    /*
-    let bytes = hyper::body::to_bytes(req.into_body()).await?;
-    let req: Req = serde_json::from_slice(&bytes)?;
-    */
+    let url_to_req = |url: &str| Request::get(url).header("User-Agent", "WKDchecker (+https://metacode.biz/@wiktor)").
+    body(hyper::body::Body::default()).unwrap();
+
     let uri = req.uri().to_string();
     let req = Req { email: uri.split('/').last().unwrap() };
     let parts = req.parse();
@@ -167,21 +163,20 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
 
     let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
 
-    let url = parts.direct_key_url.parse().unwrap();
-    let res = client.get(url).await?;
-    let direct = KeyInfo::find_key(parts.direct_key_url, res).await?;
+    let mut urls = join_all(vec![&parts.direct_key_url, &parts.direct_policy_url,
+    &parts.advanced_key_url, &parts.advanced_policy_url].iter().map(|url| client.request(url_to_req(url)))).await;
+    let api = urls.remove(3);
+    let a = urls.remove(2);
+    let dpi = urls.remove(1);
+    let d = urls.remove(0);
 
-    let url = parts.direct_policy_url.parse().unwrap();
-    let res = client.get(url).await?;
-    let direct_policy = PolicyInfo { url: parts.direct_policy_url, status: res.status().as_u16() };
+    let direct = KeyInfo::find_key(&parts.direct_key_url, d?).await?;
 
-    let url = parts.advanced_key_url.parse().unwrap();
-    let res = client.get(url).await?;
-    let advanced = KeyInfo::find_key(parts.advanced_key_url, res).await?;
+    let direct_policy = PolicyInfo { url: &parts.direct_policy_url, status: dpi?.status().as_u16() };
 
-    let url = parts.advanced_policy_url.parse().unwrap();
-    let res = client.get(url).await?;
-    let advanced_policy = PolicyInfo { url: parts.advanced_policy_url, status: res.status().as_u16() };
+    let advanced = KeyInfo::find_key(&parts.advanced_key_url, a?).await?;
+
+    let advanced_policy = PolicyInfo { url: &parts.advanced_policy_url, status: api?.status().as_u16() };
 
     let result = WkdDiagnostic {
         direct: Info {
