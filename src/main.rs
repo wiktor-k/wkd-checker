@@ -220,8 +220,10 @@ struct WkdResponse<'a> {
 
 async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error>> {
 
-    let uri = req.uri().to_string();
-    let req = Req { email: uri.split('/').last().unwrap() };
+    //let uri = req.uri().to_string();
+    //let req = Req { email: uri.split('/').last().unwrap() };
+    let bytes = hyper::body::to_bytes(req.into_body()).await?;
+    let req: Req = serde_json::from_slice(&bytes)?;
     let parts = req.parse();
 
     println!("for e-mail: {}, {:?}", req.email, parts);
