@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use {
     hyper::{
         // Following functions are used by Hyper to handle a `Request`
@@ -178,6 +179,45 @@ where T: hyper::client::connect::Connect + Clone + Send + Sync + 'static {
     }.boxed()
 }
 
+#[derive(Debug, Serialize)]
+struct DiagnosticMessage<'a> {
+    level: &'static str,
+    message: Cow<'a, str>,
+}
+
+fn key_info_to_messages<'a>(prefix: &'static str, url: &str, key_info: &'a KeyInfo) -> Vec<DiagnosticMessage<'a>> {
+    let mut messages = vec![];
+
+    messages.push(DiagnosticMessage {
+        level: "info",
+        message: format!("{}: key: {}", prefix, url).into()
+    });
+
+    if key_info.status != 200 {
+        messages.push(DiagnosticMessage {
+            level: "warning",
+            message: format!("{}: key missing", prefix).into()
+        });
+    } else if let Some(ref fpr) = key_info.fpr {
+        messages.push(DiagnosticMessage {
+            level: "success",
+            message: format!("{}: found key: {}", prefix, fpr).into()
+        })
+    } else {
+        messages.push(DiagnosticMessage {
+            level: "error",
+            message: "File exists but it cannot be parsed as OpenPGP key".into()
+        });
+    }
+
+    messages
+}
+
+#[derive(Debug, Serialize)]
+struct WkdResponse<'a> {
+    lint: Vec<DiagnosticMessage<'a>>
+}
+
 async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error>> {
 
     let uri = req.uri().to_string();
@@ -214,11 +254,35 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
         }
     };
 
+    let mut messages = vec![];
+
+    for message in key_info_to_messages("Direct", &parts.direct_key_url, &result.direct.key) {
+        messages.push(message);
+    }
+
+    if result.direct.policy.status != 200 {
+        messages.push(DiagnosticMessage {
+            level: "warning",
+            message: "Direct: policy missing".into()
+        });
+    }
+
+    for message in key_info_to_messages("Advanced", &parts.advanced_key_url, &result.advanced.key) {
+        messages.push(message);
+    }
+
+    if result.advanced.policy.status != 200 {
+        messages.push(DiagnosticMessage {
+            level: "warning",
+            message: "Advanced: policy missing".into()
+        });
+    }
+
     /*for uid in cert.userids() {
         s = format!("{}{}", s, *uid);
     }*/
 
-    Ok(Response::new(Body::from(serde_json::to_string_pretty(&result)?)))
+    Ok(Response::new(Body::from(serde_json::to_string_pretty(&WkdResponse { lint: messages })?)))
 }
 
 #[tokio::main]
