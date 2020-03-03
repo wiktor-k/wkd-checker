@@ -259,6 +259,20 @@ fn key_info_uid_to_message<'a>(prefix: &'static str, email: &str, key_info: &'a 
     }
 }
 
+fn policy_info_to_message<'a>(prefix: &'static str, policy_info: &'a PolicyInfo) -> DiagnosticMessage<'a> {
+    if policy_info.status / 100 != 2 {
+        DiagnosticMessage {
+            level: "warning",
+            message: format!("{}: policy missing", prefix).into()
+        }
+    } else {
+        DiagnosticMessage {
+            level: "success",
+            message: format!("{}: policy is present", prefix).into()
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct WkdResponse<'a> {
     lint: Vec<DiagnosticMessage<'a>>,
@@ -309,12 +323,7 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
         messages.push(message);
     }
 
-    if result.direct.policy.status != 200 {
-        messages.push(DiagnosticMessage {
-            level: "warning",
-            message: "Direct: policy missing".into()
-        });
-    }
+    messages.push(policy_info_to_message("Direct", &result.direct.policy));
 
     messages.push(key_info_uid_to_message("Direct", req.email, &result.direct.key));
 
@@ -322,12 +331,7 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
         messages.push(message);
     }
 
-    if result.advanced.policy.status != 200 {
-        messages.push(DiagnosticMessage {
-            level: "warning",
-            message: "Advanced: policy missing".into()
-        });
-    }
+    messages.push(policy_info_to_message("Advanced", &result.advanced.policy));
 
     messages.push(key_info_uid_to_message("Advanced", req.email, &result.advanced.key));
 
