@@ -107,6 +107,8 @@ mod test {
 #[derive(Debug, Serialize)]
 struct KeyInfo<'a> {
     url: &'a str,
+    cors: Option<String>,
+    userids: Vec<String>,
     fpr: Option<String>,
     status: u16,
 }
@@ -117,16 +119,25 @@ impl<'a> KeyInfo<'a> {
         if status != 200 {
             return Ok(KeyInfo {
                 url,
+                cors: None,
+                userids: vec![],
                 fpr: None,
                 status: status.as_u16()
             })
         }
+
+        let cors = res.headers().get("Access-Control-Allow-Origin").map(|h| h.to_str().ok().unwrap_or("").to_owned());
+
         let bytes = hyper::body::to_bytes(res.into_body()).await?;
 
         let cert = openpgp::Cert::from_bytes(&bytes.to_vec())?;
 
         Ok(KeyInfo {
             url,
+            cors,
+            userids: cert.userids()
+                .map(|u| String::from_utf8_lossy(u.value()).into_owned())
+                .collect::<Vec<String>>(),
             fpr: Some(cert.fingerprint().to_string()),
             status: status.as_u16()
         })
@@ -202,7 +213,7 @@ fn key_info_to_messages<'a>(prefix: &'static str, url: &str, key_info: &'a KeyIn
         messages.push(DiagnosticMessage {
             level: "success",
             message: format!("{}: found key: {}", prefix, fpr).into()
-        })
+        });
     } else {
         messages.push(DiagnosticMessage {
             level: "error",
@@ -210,12 +221,48 @@ fn key_info_to_messages<'a>(prefix: &'static str, url: &str, key_info: &'a KeyIn
         });
     }
 
+    if let Some(ref cors_value) = key_info.cors {
+        if cors_value != "*" {
+            messages.push(DiagnosticMessage {
+                level: "warning",
+                message: format!("{}: CORS header has invalid value: {}", prefix, cors_value).into()
+            });
+        } else {
+            messages.push(DiagnosticMessage {
+                level: "success",
+                message: format!("{}: CORS header is correctly set up", prefix).into()
+            });
+        }
+    } else {
+        messages.push(DiagnosticMessage {
+            level: "warning",
+            message: format!("{}: CORS header is missing", prefix).into()
+        });
+    }
+
     messages
+}
+
+fn key_info_uid_to_message<'a>(prefix: &'static str, email: &str, key_info: &'a KeyInfo) -> DiagnosticMessage<'a> {
+    let direct_uid = key_info.userids.iter().find(|u| u.contains(&format!("<{}>", email)));
+
+    if let Some(uid) = direct_uid {
+        DiagnosticMessage {
+            level: "success",
+            message: format!("{}: contains correct User ID: {}", prefix, uid).into()
+        }
+    } else {
+        DiagnosticMessage {
+            level: "error",
+            message: format!("{}: does not contains correct User ID: <{}>", prefix, email).into()
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
 struct WkdResponse<'a> {
-    lint: Vec<DiagnosticMessage<'a>>
+    lint: Vec<DiagnosticMessage<'a>>,
+    raw: &'a WkdDiagnostic<'a>,
 }
 
 async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error>> {
@@ -269,6 +316,8 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
         });
     }
 
+    messages.push(key_info_uid_to_message("Direct", req.email, &result.direct.key));
+
     for message in key_info_to_messages("Advanced", &parts.advanced_key_url, &result.advanced.key) {
         messages.push(message);
     }
@@ -280,11 +329,9 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
         });
     }
 
-    /*for uid in cert.userids() {
-        s = format!("{}{}", s, *uid);
-    }*/
+    messages.push(key_info_uid_to_message("Advanced", req.email, &result.advanced.key));
 
-    Ok(Response::new(Body::from(serde_json::to_string_pretty(&WkdResponse { lint: messages })?)))
+    Ok(Response::new(Body::from(serde_json::to_string_pretty(&WkdResponse { lint: messages, raw: &result })?)))
 }
 
 #[tokio::main]
