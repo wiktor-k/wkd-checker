@@ -165,7 +165,7 @@ struct WkdDiagnostic<'a> {
 use http;
 
 fn url_to_req(url: &str) -> http::request::Request<hyper::body::Body> {
-  Request::get(url).header("User-Agent", "WKDchecker (+https://metacode.biz/@wiktor)")
+  Request::get(url).header("User-Agent", "WKDchecker (+https://metacode.biz/openpgp/web-key-directory#2)")
   .body(hyper::body::Body::default()).unwrap()
 }
 
@@ -217,7 +217,7 @@ fn key_info_to_messages<'a>(prefix: &'static str, url: &str, key_info: &'a KeyIn
     } else {
         messages.push(DiagnosticMessage {
             level: "error",
-            message: "File exists but it cannot be parsed as OpenPGP key".into()
+            message: "File exists but it cannot be parsed as an OpenPGP key".into()
         });
     }
 
@@ -249,12 +249,12 @@ fn key_info_uid_to_message<'a>(prefix: &'static str, email: &str, key_info: &'a 
     if let Some(uid) = direct_uid {
         DiagnosticMessage {
             level: "success",
-            message: format!("{}: contains correct User ID: {}", prefix, uid).into()
+            message: format!("{}: Key contains correct User ID: {}", prefix, uid).into()
         }
     } else {
         DiagnosticMessage {
             level: "error",
-            message: format!("{}: does not contains correct User ID: <{}>", prefix, email).into()
+            message: format!("{}: Key does not contain correct User ID: <{}>", prefix, email).into()
         }
     }
 }
@@ -263,12 +263,12 @@ fn policy_info_to_message<'a>(prefix: &'static str, policy_info: &'a PolicyInfo)
     if policy_info.status / 100 != 2 {
         DiagnosticMessage {
             level: "warning",
-            message: format!("{}: policy missing", prefix).into()
+            message: format!("{}: Policy file is missing", prefix).into()
         }
     } else {
         DiagnosticMessage {
             level: "success",
-            message: format!("{}: policy is present", prefix).into()
+            message: format!("{}: Policy file is present", prefix).into()
         }
     }
 }
@@ -322,17 +322,13 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn Error
     for message in key_info_to_messages("Direct", &parts.direct_key_url, &result.direct.key) {
         messages.push(message);
     }
-
     messages.push(policy_info_to_message("Direct", &result.direct.policy));
-
     messages.push(key_info_uid_to_message("Direct", req.email, &result.direct.key));
 
     for message in key_info_to_messages("Advanced", &parts.advanced_key_url, &result.advanced.key) {
         messages.push(message);
     }
-
     messages.push(policy_info_to_message("Advanced", &result.advanced.policy));
-
     messages.push(key_info_uid_to_message("Advanced", req.email, &result.advanced.key));
 
     Ok(Response::new(Body::from(serde_json::to_string_pretty(&WkdResponse { lint: messages, raw: &result })?)))
