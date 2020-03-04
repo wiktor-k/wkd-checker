@@ -3,6 +3,8 @@ name = "wkd-checker"
 version = "0.1.0"
 authors = ["Wiktor Kwapisiewicz <wiktor@metacode.biz>"]
 edition = "2018"
+description = "Checks OpenPGP keys deployed via Web Key Directory for correctness"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
