@@ -19,7 +19,7 @@ use {
 
 #[derive(Deserialize, Debug)]
 pub struct Req<'a> {
-    email: &'a str,
+    pub email: &'a str,
 }
 
 #[derive(Debug)]
@@ -191,8 +191,8 @@ where
 
 #[derive(Debug, Serialize)]
 pub struct DiagnosticMessage<'a> {
-    level: &'static str,
-    message: Cow<'a, str>,
+    pub level: &'static str,
+    pub message: Cow<'a, str>,
 }
 
 fn key_info_to_messages<'a>(
