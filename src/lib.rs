@@ -8,14 +8,7 @@ use hyper_tls::HttpsConnector;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-use {
-    hyper::{
-        Body,
-        Client,
-        Request,
-        Response,
-    },
-};
+use hyper::{Body, Client, Request, Response};
 
 #[derive(Deserialize, Debug)]
 pub struct Req<'a> {
@@ -310,18 +303,38 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
     let dpi = urls.remove(1);
     let d = urls.remove(0);
 
-    let direct = KeyInfo::find_key(&parts.direct_key_url, d?).await?;
+    let direct = if d.is_ok() {
+        KeyInfo::find_key(&parts.direct_key_url, d?).await?
+    } else {
+        KeyInfo {
+            url: "",
+            cors: None,
+            userids: vec![],
+            fpr: None,
+            status: 0,
+        }
+    };
 
     let direct_policy = PolicyInfo {
         url: &parts.direct_policy_url,
-        status: dpi?.status().as_u16(),
+        status: dpi.map_or(0, |dpi| dpi.status().as_u16())
     };
 
-    let advanced = KeyInfo::find_key(&parts.advanced_key_url, a?).await?;
+    let advanced = if a.is_ok() {
+        KeyInfo::find_key(&parts.advanced_key_url, a?).await?
+    } else {
+        KeyInfo {
+            url: "",
+            cors: None,
+            userids: vec![],
+            fpr: None,
+            status: 0,
+        }
+    };
 
     let advanced_policy = PolicyInfo {
         url: &parts.advanced_policy_url,
-        status: api?.status().as_u16(),
+        status: api.map_or(0, |api| api.status().as_u16())
     };
 
     Ok(WkdDiagnostic {

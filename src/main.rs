@@ -3,11 +3,7 @@ use wkd_checker::{check_wkd, lint_wkd, DiagnosticMessage, Req, WkdDiagnostic};
 use {
     hyper::{
         service::{make_service_fn, service_fn},
-        Body,
-        Request,
-        Response,
-        Server,
-        StatusCode,
+        Body, Request, Response, Server, StatusCode,
     },
     std::net::SocketAddr,
 };
