@@ -169,10 +169,10 @@ where
         let response = client.request(url_to_req(url)).await;
 
         if let Ok(ref resp) = response {
-            println!("status: {}", resp.status().as_u16());
+            //println!("status: {}", resp.status().as_u16());
             if resp.status().as_u16() == 301 {
                 let redirect = resp.headers().get("Location").unwrap().to_str().unwrap();
-                println!("redirect from {} to {}", url, &redirect);
+                //println!("redirect from {} to {}", url, &redirect);
                 return make_req(&client, &redirect).await;
             }
         }
@@ -191,7 +191,9 @@ pub struct DiagnosticMessage<'a> {
 fn key_info_to_messages<'a>(
     prefix: &'static str,
     url: &str,
+    email: &str,
     key_info: &'a KeyInfo,
+    only_info: bool,
 ) -> Vec<DiagnosticMessage<'a>> {
     let mut messages = vec![];
 
@@ -202,7 +204,7 @@ fn key_info_to_messages<'a>(
 
     if key_info.status != 200 {
         messages.push(DiagnosticMessage {
-            level: "warning",
+            level: if only_info { "info" } else { "error" },
             message: format!("{}: key missing", prefix).into(),
         });
     } else if let Some(ref fpr) = key_info.fpr {
@@ -210,6 +212,27 @@ fn key_info_to_messages<'a>(
             level: "success",
             message: format!("{}: found key: {}", prefix, fpr).into(),
         });
+
+        let direct_uid = key_info
+            .userids
+            .iter()
+            .find(|u| u.contains(&format!("<{}>", email)));
+
+        if let Some(uid) = direct_uid {
+            messages.push(DiagnosticMessage {
+                level: "success",
+                message: format!("{}: Key contains correct User ID: {}", prefix, uid).into(),
+            });
+        } else {
+            messages.push(DiagnosticMessage {
+                level: "error",
+                message: format!(
+                    "{}: Key does not contain correct User ID: <{}>",
+                    prefix, email
+                )
+                .into(),
+            });
+        }
     } else {
         messages.push(DiagnosticMessage {
             level: "error",
@@ -232,48 +255,22 @@ fn key_info_to_messages<'a>(
         }
     } else {
         messages.push(DiagnosticMessage {
-            level: "warning",
-            message: format!("{}: CORS header is missing", prefix).into(),
+            level: if only_info { "info" } else { "warning" },
+            message: format!("{}: `Access-Control-Allow-Origin: *` header is missing", prefix).into(),
         });
     }
 
     messages
 }
 
-fn key_info_uid_to_message<'a>(
-    prefix: &'static str,
-    email: &str,
-    key_info: &'a KeyInfo,
-) -> DiagnosticMessage<'a> {
-    let direct_uid = key_info
-        .userids
-        .iter()
-        .find(|u| u.contains(&format!("<{}>", email)));
-
-    if let Some(uid) = direct_uid {
-        DiagnosticMessage {
-            level: "success",
-            message: format!("{}: Key contains correct User ID: {}", prefix, uid).into(),
-        }
-    } else {
-        DiagnosticMessage {
-            level: "error",
-            message: format!(
-                "{}: Key does not contain correct User ID: <{}>",
-                prefix, email
-            )
-            .into(),
-        }
-    }
-}
-
 fn policy_info_to_message<'a>(
     prefix: &'static str,
     policy_info: &'a PolicyInfo,
+    only_info: bool,
 ) -> DiagnosticMessage<'a> {
     if policy_info.status / 100 != 2 {
         DiagnosticMessage {
-            level: "warning",
+            level: if only_info { "info" } else { "warning" },
             message: format!("{}: Policy file is missing", prefix).into(),
         }
     } else {
@@ -307,7 +304,7 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
         KeyInfo::find_key(&parts.direct_key_url, d?).await?
     } else {
         KeyInfo {
-            url: "",
+            url: &parts.direct_key_url,
             cors: None,
             userids: vec![],
             fpr: None,
@@ -317,14 +314,14 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
 
     let direct_policy = PolicyInfo {
         url: &parts.direct_policy_url,
-        status: dpi.map_or(0, |dpi| dpi.status().as_u16())
+        status: dpi.map_or(0, |dpi| dpi.status().as_u16()),
     };
 
     let advanced = if a.is_ok() {
         KeyInfo::find_key(&parts.advanced_key_url, a?).await?
     } else {
         KeyInfo {
-            url: "",
+            url: &parts.advanced_key_url,
             cors: None,
             userids: vec![],
             fpr: None,
@@ -334,7 +331,7 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
 
     let advanced_policy = PolicyInfo {
         url: &parts.advanced_policy_url,
-        status: api.map_or(0, |api| api.status().as_u16())
+        status: api.map_or(0, |api| api.status().as_u16()),
     };
 
     Ok(WkdDiagnostic {
@@ -355,33 +352,34 @@ pub fn lint_wkd<'a>(
 ) -> Vec<DiagnosticMessage<'a>> {
     let mut messages = vec![];
 
-    for message in
-        key_info_to_messages("Direct", &diagnostic.direct.key.url, &diagnostic.direct.key)
-    {
+    for message in key_info_to_messages(
+        "Direct",
+        &diagnostic.direct.key.url,
+        &email,
+        &diagnostic.direct.key,
+        false,
+    ) {
         messages.push(message);
     }
-    messages.push(policy_info_to_message("Direct", &diagnostic.direct.policy));
-    messages.push(key_info_uid_to_message(
+    messages.push(policy_info_to_message(
         "Direct",
-        email,
-        &diagnostic.direct.key,
+        &diagnostic.direct.policy,
+        false,
     ));
 
     for message in key_info_to_messages(
         "Advanced",
         &diagnostic.advanced.key.url,
+        &email,
         &diagnostic.advanced.key,
+        diagnostic.direct.key.fpr.is_some(),
     ) {
         messages.push(message);
     }
     messages.push(policy_info_to_message(
         "Advanced",
         &diagnostic.advanced.policy,
-    ));
-    messages.push(key_info_uid_to_message(
-        "Advanced",
-        email,
-        &diagnostic.advanced.key,
+        diagnostic.direct.key.fpr.is_some(),
     ));
 
     messages
