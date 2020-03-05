@@ -216,7 +216,7 @@ fn key_info_to_messages<'a>(
         let direct_uid = key_info
             .userids
             .iter()
-            .find(|u| u.contains(&format!("<{}>", email)));
+            .find(|u| *u == email || u.contains(&format!("<{}>", email)));
 
         if let Some(uid) = direct_uid {
             messages.push(DiagnosticMessage {
