@@ -50,7 +50,7 @@ async fn main() {
     env_logger::init();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    println!("Listening on http://{}", addr);
+    println!("Listening on: http://{}", addr);
 
     // Create a server bound on the provided address
     let serve_future = Server::bind(&addr).serve(make_service_fn(|_| async {
