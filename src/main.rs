@@ -13,7 +13,7 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 struct WkdResponse<'a> {
     lint: Vec<DiagnosticMessage<'a>>,
-    raw: &'a WkdDiagnostic<'a>,
+    raw: &'a WkdDiagnostic,
 }
 
 async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn std::error::Error>> {
@@ -21,11 +21,11 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn std::
     //let req = Req { email: uri.split('/').last().unwrap() };
     let bytes = hyper::body::to_bytes(req.into_body()).await?;
     let req: Req = serde_json::from_slice(&bytes)?;
-    let parts = req.parse();
+    //let parts = req.parse();
 
-    let diagnostic = check_wkd(&parts).await?;
+    let diagnostic = check_wkd(req.email).await?;
 
-    let lint = lint_wkd(parts.email, &diagnostic);
+    let lint = lint_wkd(req.email, &diagnostic);
 
     Ok(Response::new(Body::from(serde_json::to_string_pretty(
         &WkdResponse {

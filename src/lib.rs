@@ -83,16 +83,16 @@ mod test {
 }
 
 #[derive(Debug, Serialize)]
-struct KeyInfo<'a> {
-    url: &'a str,
+struct KeyInfo {
+    url: String,
     cors: Option<String>,
     userids: Vec<String>,
     fpr: Option<String>,
     status: u16,
 }
 
-impl<'a> KeyInfo<'a> {
-    async fn find_key(url: &'a str, res: Response<Body>) -> Result<KeyInfo<'a>, Box<dyn Error>> {
+impl KeyInfo {
+    async fn find_key(url: String, res: Response<Body>) -> Result<KeyInfo, Box<dyn Error>> {
         let status = res.status();
         if status != 200 {
             return Ok(KeyInfo {
@@ -127,21 +127,21 @@ impl<'a> KeyInfo<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct PolicyInfo<'a> {
-    url: &'a str,
+struct PolicyInfo {
+    url: String,
     status: u16,
 }
 
 #[derive(Debug, Serialize)]
-struct Info<'a> {
-    key: KeyInfo<'a>,
-    policy: PolicyInfo<'a>,
+struct Info {
+    key: KeyInfo,
+    policy: PolicyInfo,
 }
 
 #[derive(Debug, Serialize)]
-pub struct WkdDiagnostic<'a> {
-    direct: Info<'a>,
-    advanced: Info<'a>,
+pub struct WkdDiagnostic {
+    direct: Info,
+    advanced: Info,
 }
 
 use http;
@@ -281,8 +281,12 @@ fn policy_info_to_message<'a>(
     }
 }
 
-pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Box<dyn Error>> {
+pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
     let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
+
+
+    let req = Req { email };
+    let parts = req.parse();
 
     let mut urls = join_all(
         vec![
@@ -301,10 +305,10 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
     let d = urls.remove(0);
 
     let direct = if d.is_ok() {
-        KeyInfo::find_key(&parts.direct_key_url, d?).await?
+        KeyInfo::find_key(parts.direct_key_url, d?).await?
     } else {
         KeyInfo {
-            url: &parts.direct_key_url,
+            url: parts.direct_key_url,
             cors: None,
             userids: vec![],
             fpr: None,
@@ -313,15 +317,15 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
     };
 
     let direct_policy = PolicyInfo {
-        url: &parts.direct_policy_url,
+        url: parts.direct_policy_url,
         status: dpi.map_or(0, |dpi| dpi.status().as_u16()),
     };
 
     let advanced = if a.is_ok() {
-        KeyInfo::find_key(&parts.advanced_key_url, a?).await?
+        KeyInfo::find_key(parts.advanced_key_url, a?).await?
     } else {
         KeyInfo {
-            url: &parts.advanced_key_url,
+            url: parts.advanced_key_url,
             cors: None,
             userids: vec![],
             fpr: None,
@@ -330,7 +334,7 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
     };
 
     let advanced_policy = PolicyInfo {
-        url: &parts.advanced_policy_url,
+        url: parts.advanced_policy_url,
         status: api.map_or(0, |api| api.status().as_u16()),
     };
 
@@ -348,7 +352,7 @@ pub async fn check_wkd<'a>(parts: &'a Parts<'a>) -> Result<WkdDiagnostic<'a>, Bo
 
 pub fn lint_wkd<'a>(
     email: &'a str,
-    diagnostic: &'a WkdDiagnostic<'a>,
+    diagnostic: &'a WkdDiagnostic,
 ) -> Vec<DiagnosticMessage<'a>> {
     let mut messages = vec![];
 
