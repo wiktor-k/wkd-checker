@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 extern crate sequoia_openpgp as openpgp;
+use openpgp::cert::CertParser;
 use openpgp::parse::Parse;
 use zbase32;
 
@@ -86,9 +87,14 @@ mod test {
 struct KeyUrlInfo {
     url: String,
     cors: Option<String>,
-    userids: Vec<String>,
-    fpr: Option<String>,
     status: u16,
+    keys: Vec<KeyInfo>,
+}
+
+#[derive(Debug, Serialize)]
+struct KeyInfo {
+    userids: Vec<String>,
+    fpr: String,
 }
 
 impl KeyUrlInfo {
@@ -98,9 +104,8 @@ impl KeyUrlInfo {
             return Ok(KeyUrlInfo {
                 url,
                 cors: None,
-                userids: vec![],
-                fpr: None,
                 status: status.as_u16(),
+                keys: Vec::new(),
             });
         }
 
@@ -111,17 +116,29 @@ impl KeyUrlInfo {
 
         let bytes = hyper::body::to_bytes(res.into_body()).await?;
 
-        let cert = openpgp::Cert::from_bytes(&bytes.to_vec())?;
+        let parser = CertParser::from_bytes(&bytes)?;
+
+        let mut keys = Vec::new();
+        for cert in parser {
+            match cert {
+                Ok(cert) => {
+                    keys.push(KeyInfo {
+                        userids: cert
+                            .userids()
+                            .map(|u| String::from_utf8_lossy(u.value()).into_owned())
+                            .collect::<Vec<String>>(),
+                        fpr: cert.fingerprint().to_string(),
+                    });
+                },
+                Err(_) => (),
+            }
+        }
 
         Ok(KeyUrlInfo {
             url,
             cors,
-            userids: cert
-                .userids()
-                .map(|u| String::from_utf8_lossy(u.value()).into_owned())
-                .collect::<Vec<String>>(),
-            fpr: Some(cert.fingerprint().to_string()),
             status: status.as_u16(),
+            keys,
         })
     }
 }
@@ -207,15 +224,18 @@ fn key_info_to_messages<'a>(
             level: if only_info { "info" } else { "error" },
             message: format!("{}: key missing", prefix).into(),
         });
-    } else if let Some(ref fpr) = key_info.fpr {
-        messages.push(DiagnosticMessage {
-            level: "success",
-            message: format!("{}: found key: {}", prefix, fpr).into(),
-        });
+    } else if !key_info.keys.is_empty() {
+        for key in &key_info.keys {
+            messages.push(DiagnosticMessage {
+                level: "success",
+                message: format!("{}: found key: {}", prefix, key.fpr).into(),
+            });
+        }
 
         let direct_uid = key_info
-            .userids
+            .keys
             .iter()
+            .flat_map(|key| &key.userids)
             .find(|u| *u == email || u.contains(&format!("<{}>", email)));
 
         if let Some(uid) = direct_uid {
@@ -310,8 +330,7 @@ pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
         KeyUrlInfo {
             url: parts.direct_key_url,
             cors: None,
-            userids: vec![],
-            fpr: None,
+            keys: Vec::new(),
             status: 0,
         }
     };
@@ -327,9 +346,8 @@ pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
         KeyUrlInfo {
             url: parts.advanced_key_url,
             cors: None,
-            userids: vec![],
-            fpr: None,
             status: 0,
+            keys: Vec::new(),
         }
     };
 
@@ -376,14 +394,14 @@ pub fn lint_wkd<'a>(
         &diagnostic.advanced.key.url,
         &email,
         &diagnostic.advanced.key,
-        diagnostic.direct.key.fpr.is_some(),
+        !diagnostic.direct.key.keys.is_empty(),
     ) {
         messages.push(message);
     }
     messages.push(policy_info_to_message(
         "Advanced",
         &diagnostic.advanced.policy,
-        diagnostic.direct.key.fpr.is_some(),
+        !diagnostic.direct.key.keys.is_empty(),
     ));
 
     messages
