@@ -46,13 +46,20 @@ async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
         Err(ref error) => {
             let mut builder = Response::builder();
             let headers = builder.headers_mut().unwrap();
-            headers.append(http::header::CONTENT_TYPE, "application/problem+json".parse().unwrap());
-            Ok(builder.status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from(serde_json::to_string_pretty(
-                &ErrorResponse { message: error.to_string() }
-            ).unwrap()))
-            .unwrap())
-        },
+            headers.append(
+                http::header::CONTENT_TYPE,
+                "application/problem+json".parse().unwrap(),
+            );
+            Ok(builder
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(
+                    serde_json::to_string_pretty(&ErrorResponse {
+                        message: error.to_string(),
+                    })
+                    .unwrap(),
+                ))
+                .unwrap())
+        }
     }
 }
 

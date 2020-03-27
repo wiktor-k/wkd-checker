@@ -91,12 +91,6 @@ struct KeyUrlInfo {
     keys: Vec<KeyInfo>,
 }
 
-#[derive(Debug, Serialize)]
-struct KeyInfo {
-    userids: Vec<String>,
-    fpr: String,
-}
-
 impl KeyUrlInfo {
     async fn find_key(url: String, res: Response<Body>) -> Result<KeyUrlInfo, Box<dyn Error>> {
         let status = res.status();
@@ -129,7 +123,7 @@ impl KeyUrlInfo {
                             .collect::<Vec<String>>(),
                         fpr: cert.fingerprint().to_string(),
                     });
-                },
+                }
                 Err(_) => (),
             }
         }
@@ -140,6 +134,20 @@ impl KeyUrlInfo {
             status: status.as_u16(),
             keys,
         })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct KeyInfo {
+    userids: Vec<String>,
+    fpr: String,
+}
+
+impl KeyInfo {
+    fn get_first_matching_uid(&self, email: &str) -> Option<&String> {
+        self.userids
+            .iter()
+            .find(|u| *u == email || u.contains(&format!("<{}>", email)))
     }
 }
 
@@ -230,28 +238,24 @@ fn key_info_to_messages<'a>(
                 level: "success",
                 message: format!("{}: found key: {}", prefix, key.fpr).into(),
             });
-        }
 
-        let direct_uid = key_info
-            .keys
-            .iter()
-            .flat_map(|key| &key.userids)
-            .find(|u| *u == email || u.contains(&format!("<{}>", email)));
+            let uid = key.get_first_matching_uid(email);
 
-        if let Some(uid) = direct_uid {
-            messages.push(DiagnosticMessage {
-                level: "success",
-                message: format!("{}: Key contains correct User ID: {}", prefix, uid).into(),
-            });
-        } else {
-            messages.push(DiagnosticMessage {
-                level: "error",
-                message: format!(
-                    "{}: Key does not contain correct User ID: <{}>",
-                    prefix, email
-                )
-                .into(),
-            });
+            if let Some(uid) = uid {
+                messages.push(DiagnosticMessage {
+                    level: "success",
+                    message: format!("{}: Key contains correct User ID: {}", prefix, uid).into(),
+                });
+            } else {
+                messages.push(DiagnosticMessage {
+                    level: "error",
+                    message: format!(
+                        "{}: Key does not contain correct User ID: <{}>",
+                        prefix, email
+                    )
+                    .into(),
+                });
+            }
         }
     } else {
         messages.push(DiagnosticMessage {
@@ -276,7 +280,11 @@ fn key_info_to_messages<'a>(
     } else {
         messages.push(DiagnosticMessage {
             level: if only_info { "info" } else { "warning" },
-            message: format!("{}: `Access-Control-Allow-Origin: *` header is missing", prefix).into(),
+            message: format!(
+                "{}: `Access-Control-Allow-Origin: *` header is missing",
+                prefix
+            )
+            .into(),
         });
     }
 
@@ -303,7 +311,6 @@ fn policy_info_to_message<'a>(
 
 pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
     let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
-
 
     let req = Req { email };
     let parts = req.parse();
@@ -368,10 +375,7 @@ pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
     })
 }
 
-pub fn lint_wkd<'a>(
-    email: &'a str,
-    diagnostic: &'a WkdDiagnostic,
-) -> Vec<DiagnosticMessage<'a>> {
+pub fn lint_wkd<'a>(email: &'a str, diagnostic: &'a WkdDiagnostic) -> Vec<DiagnosticMessage<'a>> {
     let mut messages = vec![];
 
     for message in key_info_to_messages(
