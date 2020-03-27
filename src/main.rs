@@ -35,13 +35,24 @@ async fn server_req2(req: Request<Body>) -> Result<Response<Body>, Box<dyn std::
     )?)))
 }
 
+#[derive(Serialize)]
+struct ErrorResponse {
+    message: String,
+}
+
 async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     match server_req2(req).await {
         Ok(resp) => Ok(resp),
-        Err(ref error) => Ok(Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from(format!("err: {}", error)))
-            .unwrap()),
+        Err(ref error) => {
+            let mut builder = Response::builder();
+            let headers = builder.headers_mut().unwrap();
+            headers.append(http::header::CONTENT_TYPE, "application/problem+json".parse().unwrap());
+            Ok(builder.status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(serde_json::to_string_pretty(
+                &ErrorResponse { message: error.to_string() }
+            ).unwrap()))
+            .unwrap())
+        },
     }
 }
 
