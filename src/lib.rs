@@ -83,7 +83,7 @@ mod test {
 }
 
 #[derive(Debug, Serialize)]
-struct KeyInfo {
+struct KeyUrlInfo {
     url: String,
     cors: Option<String>,
     userids: Vec<String>,
@@ -91,11 +91,11 @@ struct KeyInfo {
     status: u16,
 }
 
-impl KeyInfo {
-    async fn find_key(url: String, res: Response<Body>) -> Result<KeyInfo, Box<dyn Error>> {
+impl KeyUrlInfo {
+    async fn find_key(url: String, res: Response<Body>) -> Result<KeyUrlInfo, Box<dyn Error>> {
         let status = res.status();
         if status != 200 {
-            return Ok(KeyInfo {
+            return Ok(KeyUrlInfo {
                 url,
                 cors: None,
                 userids: vec![],
@@ -113,7 +113,7 @@ impl KeyInfo {
 
         let cert = openpgp::Cert::from_bytes(&bytes.to_vec())?;
 
-        Ok(KeyInfo {
+        Ok(KeyUrlInfo {
             url,
             cors,
             userids: cert
@@ -134,7 +134,7 @@ struct PolicyInfo {
 
 #[derive(Debug, Serialize)]
 struct Info {
-    key: KeyInfo,
+    key: KeyUrlInfo,
     policy: PolicyInfo,
 }
 
@@ -192,7 +192,7 @@ fn key_info_to_messages<'a>(
     prefix: &'static str,
     url: &str,
     email: &str,
-    key_info: &'a KeyInfo,
+    key_info: &'a KeyUrlInfo,
     only_info: bool,
 ) -> Vec<DiagnosticMessage<'a>> {
     let mut messages = vec![];
@@ -305,9 +305,9 @@ pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
     let d = urls.remove(0);
 
     let direct = if d.is_ok() {
-        KeyInfo::find_key(parts.direct_key_url, d?).await?
+        KeyUrlInfo::find_key(parts.direct_key_url, d?).await?
     } else {
-        KeyInfo {
+        KeyUrlInfo {
             url: parts.direct_key_url,
             cors: None,
             userids: vec![],
@@ -322,9 +322,9 @@ pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
     };
 
     let advanced = if a.is_ok() {
-        KeyInfo::find_key(parts.advanced_key_url, a?).await?
+        KeyUrlInfo::find_key(parts.advanced_key_url, a?).await?
     } else {
-        KeyInfo {
+        KeyUrlInfo {
             url: parts.advanced_key_url,
             cors: None,
             userids: vec![],
