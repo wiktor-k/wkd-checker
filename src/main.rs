@@ -44,6 +44,7 @@ async fn serve_req(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     match server_req2(req).await {
         Ok(resp) => Ok(resp),
         Err(ref error) => {
+            println!("Error: {:?}", error);
             let mut builder = Response::builder();
             let headers = builder.headers_mut().unwrap();
             headers.append(
