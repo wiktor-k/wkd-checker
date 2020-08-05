@@ -173,13 +173,14 @@ dependencies = [
 
 [[package]]
 name = "buffered-reader"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2036ba174da63bef4efd91b483cd67913aaeeb471817b8a68bd8380779885090"
+checksum = "85742fe7ab2214174c46053973de8e07b7ba72e9546251998526f6597cd24b30"
 dependencies = [
  "bzip2",
  "flate2",
  "libc",
+ "miniz_oxide",
 ]
 
 [[package]]
@@ -349,6 +350,12 @@ dependencies = [
  "serde",
  "strsim",
 ]
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3ec9c7fb9a2ce708751c98e31ccbae74b6ab194f5c8e30cfb7ed62e38b70866"
 
 [[package]]
 name = "either"
@@ -817,9 +824,9 @@ dependencies = [
 
 [[package]]
 name = "miniz_oxide"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa679ff6578b1cddee93d7e82e263b94a575e0bfced07284eb0c037c1d2416a5"
+checksum = "791daaae1ed6889560f8c4359194f56648355540573244a5448a83ba1ecc7435"
 dependencies = [
  "adler32",
 ]
@@ -1399,15 +1406,16 @@ dependencies = [
 
 [[package]]
 name = "sequoia-openpgp"
-version = "0.17.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "725aa10d2a0cec18815f441dbc3b6f68f6e5c15560f7bfb4f21cd983f4517229"
+checksum = "6aaf4fcecf3863722d897bc98c5d5caa0ddd9cddaf0a34871372e9413a9dde78"
 dependencies = [
  "anyhow",
  "backtrace",
  "base64",
  "buffered-reader",
  "bzip2",
+ "dyn-clone",
  "flate2",
  "idna",
  "lalrpop",
