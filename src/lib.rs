@@ -376,6 +376,7 @@ pub async fn check_wkd(email: &str) -> Result<WkdDiagnostic, Box<dyn Error>> {
 }
 
 pub fn lint_wkd<'a>(email: &'a str, diagnostic: &'a WkdDiagnostic) -> Vec<DiagnosticMessage<'a>> {
+    let email = String::from(email).to_lowercase();
     let mut messages = vec![];
 
     for message in key_info_to_messages(
