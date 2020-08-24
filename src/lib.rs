@@ -41,7 +41,7 @@ impl Req<'_> {
     pub fn parse(&self) -> Parts {
         let parts = self.parts();
         let local = parts[0];
-        let encoded_local = Self::encoded_part(local.as_bytes());
+        let encoded_local = Self::encoded_part(local.to_lowercase().as_bytes());
         let domain = parts[1];
         Parts {
             email: self.email,
@@ -67,15 +67,15 @@ mod test {
     #[test]
     fn test_parsing() {
         let req = crate::Req {
-            email: "eschwartz@archlinux.org",
+            email: "ESchwartz@archlinux.org",
         };
         let parts = req.parse();
-        assert_eq!(parts.advanced_key_url, "https://openpgpkey.archlinux.org/.well-known/openpgpkey/archlinux.org/hu/ycx3iaqih9tzkfk7dp8jo9xrdepu5m8u?l=eschwartz");
+        assert_eq!(parts.advanced_key_url, "https://openpgpkey.archlinux.org/.well-known/openpgpkey/archlinux.org/hu/ycx3iaqih9tzkfk7dp8jo9xrdepu5m8u?l=ESchwartz");
         assert_eq!(
             parts.advanced_policy_url,
             "https://openpgpkey.archlinux.org/.well-known/openpgpkey/archlinux.org/policy"
         );
-        assert_eq!(parts.direct_key_url, "https://archlinux.org/.well-known/openpgpkey/hu/ycx3iaqih9tzkfk7dp8jo9xrdepu5m8u?l=eschwartz");
+        assert_eq!(parts.direct_key_url, "https://archlinux.org/.well-known/openpgpkey/hu/ycx3iaqih9tzkfk7dp8jo9xrdepu5m8u?l=ESchwartz");
         assert_eq!(
             parts.direct_policy_url,
             "https://archlinux.org/.well-known/openpgpkey/policy"
