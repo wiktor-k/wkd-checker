@@ -16,7 +16,7 @@ hyper-tls = "0.4.1"
 tokio = { version = "0.2", features = ["full"] }
 log = "0.4.8"
 env_logger = "0.7.1"
-sequoia-openpgp = "0.19.0"
+sequoia-openpgp = "1.1.0"
 zbase32 = "0.1.2"
 sha1 = "0.6.0"
 futures = "0.3.4"
