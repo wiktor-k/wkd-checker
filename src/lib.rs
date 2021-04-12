@@ -93,20 +93,20 @@ struct KeyUrlInfo {
 
 impl KeyUrlInfo {
     async fn find_key(url: String, res: Response<Body>) -> Result<KeyUrlInfo, Box<dyn Error>> {
-        let status = res.status();
-        if status != 200 {
-            return Ok(KeyUrlInfo {
-                url,
-                cors: None,
-                status: status.as_u16(),
-                keys: Vec::new(),
-            });
-        }
-
         let cors = res
             .headers()
             .get("Access-Control-Allow-Origin")
             .map(|h| h.to_str().ok().unwrap_or("").to_owned());
+
+        let status = res.status();
+        if status != 200 {
+            return Ok(KeyUrlInfo {
+                url,
+                cors,
+                status: status.as_u16(),
+                keys: Vec::new(),
+            });
+        }
 
         let bytes = hyper::body::to_bytes(res.into_body()).await?;
 
